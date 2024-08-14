@@ -1,30 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Web3 from 'web3';
-import { Interface } from 'ethers';
+import { Alchemy, Network, AlchemySubscription } from 'alchemy-sdk';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 import { FiCopy } from 'react-icons/fi';
 import ConnectForm from './components/ConnectForm';
 
-function App() {
-  const [web3, setWeb3] = useState(null);
-  const [transactions, setTransactions] = useState([]);
-  const [selectedTx, setSelectedTx] = useState(null);
-  const [subscription, setSubscription] = useState(null);
-  const [decodedData, setDecodedData] = useState('');
-  const [loading, setLoading] = useState(false);
+const settings = {
+  apiKey: process.env.REACT_APP_ALCHEMY_API_KEY,
+  network: Network.ETH_SEPOLIA,
+};
 
+const alchemy = new Alchemy(settings);
+
+let rpcUrl = process.env.REACT_APP_RPC_URL;
+const web3 = new Web3(new Web3.providers.WebsocketProvider(rpcUrl));
+
+function App() {
+  const [transactions, setTransactions] = useState([]);
+  const [decodedData, setDecodedData] = useState('');
+  const [toAddress, setToAddress] = useState(null);
+  const [loading, setLoading] = useState(false);
   const intervalRef = useRef(null);
 
-  const hardcodedPrivateKey = '';  
-
-  useEffect(() => {
-    if (web3 && subscription) {
-      startMatrixEffect();
-    } else {
-      stopMatrixEffect();
-    }
-    return () => stopMatrixEffect();
-  }, [web3, subscription]);
+  const hardcodedPrivateKey = process.env.REACT_APP_PRIVATE_KEY;;
 
   const startMatrixEffect = () => {
     const canvas = document.getElementById("matrixCanvas");
@@ -66,56 +64,28 @@ function App() {
     clearInterval(intervalRef.current);
   };
 
-  const connectToWebSocket = async (contractAddress, rpcUrl) => {
-    if (subscription) {
-      await unsubscribeFromWebSocket();
-      return;
-    }
+  useEffect(() => {
+    if (toAddress) {
+      startMatrixEffect();
 
-    setLoading(true);
-
-    try {
-      const web3Instance = new Web3(new Web3.providers.WebsocketProvider(rpcUrl));
-      setWeb3(web3Instance);
-
-      const newSubscription = await web3Instance.eth.subscribe('pendingTransactions');
-
-      newSubscription.on('data', async (txHash) => {
-
-        try {
-          const transaction = await web3Instance.eth.getTransaction(txHash);
-          console.log(transaction)
-          if (transaction && transaction.to && transaction.to.toLowerCase() === contractAddress.toLowerCase()) {
-            setTransactions((prev) => [...prev, transaction]);
-
-            const decoded = decodeTransactionData(transaction.input);
-            setDecodedData(decoded || transaction.input);
-          }
-        } catch (err) {
-          console.error('Transaction not found:', txHash, err.message);
+      alchemy.ws.on(
+        {
+          method: AlchemySubscription.PENDING_TRANSACTIONS,
+          toAddress: toAddress,
+        },
+        (tx) => {
+          setTransactions((prev) => [...prev, tx]);
+          const decoded = decodeTransactionData(tx.input);
+          setDecodedData(decoded || tx.input);
         }
-      });
+      );
 
-      setSubscription(newSubscription);
-    } catch (err) {
-      console.error('Failed to connect to WebSocket or subscribe to transactions:', err);
-    } finally {
-      setLoading(false);
+      return () => {
+        stopMatrixEffect();
+        alchemy.ws.removeAllListeners();
+      };
     }
-  };
-
-  const unsubscribeFromWebSocket = async () => {
-    if (subscription) {
-      try {
-        await subscription.unsubscribe();
-        setSubscription(null);
-        setWeb3(null);
-        setTransactions([]);
-      } catch (err) {
-        console.error('Failed to unsubscribe:', err);
-      }
-    }
-  };
+  }, [toAddress]);
 
   const decodeTransactionData = (inputData) => {
     try {
@@ -130,16 +100,6 @@ function App() {
         result = asciiData;
       }
 
-      try {
-        const iface = new Interface([]);
-        const decodedData = iface.parseTransaction({ data: inputData });
-        if (decodedData) {
-          result = JSON.stringify(decodedData, null, 2);
-        }
-      } catch (e) {
-        console.log('Decoding with ethers.js failed, returning hex string');
-      }
-
       return result;
     } catch (error) {
       console.error('Decoding error:', error);
@@ -148,7 +108,7 @@ function App() {
   };
 
   const sendFrontrunTransaction = async (transaction) => {
-    if (!transaction || !web3) return;
+    if (!transaction || !alchemy) return;
 
     try {
       let key = hardcodedPrivateKey;
@@ -174,6 +134,10 @@ function App() {
     }
   };
 
+  const handleConnect = (contractAddress) => {
+    setToAddress(contractAddress);
+  };
+
   const truncateText = (text, startChars = 6, endChars = 4) => {
     if (text.length <= startChars + endChars + 5) return text;
     return `${text.slice(0, startChars)}...${text.slice(-endChars)}`;
@@ -185,7 +149,7 @@ function App() {
       <div className="w-full max-w-lg relative z-10">
         <h1 className="text-2xl mb-4 border-b border-green-500 pb-2 text-center">Transaction Monitor</h1>
 
-        <ConnectForm onConnect={connectToWebSocket} isConnected={!!subscription} />
+        <ConnectForm onConnect={handleConnect} isConnected={!!toAddress} />
 
         <div className="mt-4 p-4 bg-black rounded border border-green-500">
           <h2 className="text-lg mb-2">Pending Transactions</h2>

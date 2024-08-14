@@ -2,11 +2,10 @@ import React, { useState } from 'react';
 
 function ConnectForm({ onConnect, isConnected }) {
   const [contractAddress, setContractAddress] = useState('');
-  const [rpcUrl, setRpcUrl] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onConnect(contractAddress, rpcUrl);
+    onConnect(contractAddress);
   };
 
   return (
@@ -20,16 +19,6 @@ function ConnectForm({ onConnect, isConnected }) {
             value={contractAddress}
             onChange={(e) => setContractAddress(e.target.value)}
             placeholder="Enter Contract Address"
-          />
-        </div>
-        <div className="mb-4">
-          <label className="block text-sm mb-2">RPC URL:</label>
-          <input
-            type="text"
-            className="w-full p-2 rounded bg-black border border-green-500 text-green-500"
-            value={rpcUrl}
-            onChange={(e) => setRpcUrl(e.target.value)}
-            placeholder="Enter RPC URL"
           />
         </div>
         <button
